@@ -46,16 +46,18 @@
     padding:var(--pad);box-shadow:0 2px 14px rgba(0,0,0,.18);
     display:flex;flex-direction:column;position:relative;overflow:hidden;
   }
-  #title{font-weight:800;text-align:right;margin:0 0 var(--pad) 0;
+  #title{font-weight:800;text-align:var(--titleAlign);margin:0 0 var(--pad) 0;
     font-size:var(--titleFs);line-height:1;letter-spacing:-.01em}
   #grid{flex:1;display:flex;flex-direction:column}
   .lp-row{display:flex;height:var(--rh);position:relative}
   .sem-strip{width:var(--strip);flex:none}
   .sem-strip.s1{background:var(--sem1)}
   .sem-strip.s2{background:var(--sem2)}
-  .lp-num{width:var(--cw);flex:none;display:flex;align-items:center;justify-content:center;
-    font-weight:800;color:#c9cfd4;font-size:var(--lpFs);line-height:1;user-select:none}
   .cells{display:flex;flex:1;min-width:0}
+  /* big greyed learning-period number inside the first cell */
+  .lp-badge{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
+    font-weight:800;color:rgba(120,128,136,.42);font-size:var(--lpFs);line-height:1;
+    user-select:none;pointer-events:none;z-index:1}
   .cell{width:var(--cw);flex:none;position:relative;border-right:var(--hair) solid var(--line);
     border-bottom:var(--hair) solid var(--line);background:#fbfdfb;overflow:hidden;cursor:pointer}
   .lp-row .cell:first-child{border-left:var(--hair) solid var(--line)}
@@ -67,9 +69,14 @@
       repeating-linear-gradient(45deg, rgba(120,130,140,.05) 0 2px, transparent 2px 9px),
       linear-gradient(180deg, rgba(120,130,140,.09), rgba(120,130,140,.03));
   }
-  .cell .date{position:absolute;left:.03in;bottom:.02in;font-size:var(--dateFs);color:#333;line-height:1;white-space:nowrap}
-  .cell .note{position:absolute;inset:0 .04in var(--noteBottom) .04in;display:flex;align-items:center;justify-content:center;
-    text-align:center;font-size:var(--noteFs);font-weight:600;color:#243;line-height:1.05;overflow:hidden}
+  .cell .date{position:absolute;left:.03in;font-size:var(--dateFs);color:#333;line-height:1;white-space:nowrap;z-index:2}
+  .cell .note{position:absolute;display:flex;align-items:center;justify-content:center;
+    text-align:center;font-size:var(--noteFs);font-weight:600;color:#243;line-height:1.05;overflow:hidden;z-index:2}
+  /* date placement */
+  .cells.dpos-bottom .cell .date{bottom:.02in;top:auto}
+  .cells.dpos-bottom .cell .note{inset:0 .04in var(--noteBottom) .04in}
+  .cells.dpos-top .cell .date{top:.03in;bottom:auto}
+  .cells.dpos-top .cell .note{inset:var(--noteBottom) .04in 0 .04in}
   .cell.no-school{
     background-image:repeating-linear-gradient(45deg,rgba(150,150,150,.28) 0 3px,transparent 3px 8px);
     background-color:#eceff1;color:#9aa;
@@ -128,6 +135,28 @@
     <input type="file" id="importFile" accept="application/json" style="display:none">
   </div>
 
+  <div class="row" style="margin-top:10px;border-top:1px solid #e1e6ea;padding-top:10px">
+    <div class="field"><label>Title align</label>
+      <select id="titleAlign">
+        <option value="left">Left</option>
+        <option value="center">Center</option>
+        <option value="right" selected>Right</option>
+      </select>
+    </div>
+    <div class="field"><label>Title size · <span id="titleSizeV">100%</span></label>
+      <input type="range" id="titleScale" min="40" max="220" step="5" value="100"></div>
+    <div class="field"><label>LP number size · <span id="lpSizeV">100%</span></label>
+      <input type="range" id="lpScale" min="30" max="200" step="5" value="100"></div>
+    <div class="field"><label>Date size · <span id="dateSizeV">100%</span></label>
+      <input type="range" id="dateScale" min="40" max="220" step="5" value="100"></div>
+    <div class="field"><label>Date position</label>
+      <select id="datePos">
+        <option value="bottom" selected>Bottom-left</option>
+        <option value="top">Top-left</option>
+      </select>
+    </div>
+  </div>
+
   <details class="adv">
     <summary>Advanced · weeks per learning period</summary>
     <div class="adv-body" id="weeksEditor"></div>
@@ -182,6 +211,9 @@
 const MONTHS=["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
 const DEFAULT_WEEKS=[4,4,4,4,4,4,6,4,4,4,4,4]; // LP1..LP12 ; last LP = remainder
 const SWATCHES=["","#ffd9d9","#ffe9c7","#fff5c2","#d9f0d3","#cfe8f5","#dcd6f2","#f3d1e8","#d9dde1"];
+// subtle per-learning-period row tints (echoes the original calendar)
+const ROW_TINTS=["#eef0f2","#e9f0ea","#e7f1e6","#fbe9e9","#ece9f5","#eae7f3","#e2f1f4",
+                 "#f8efdc","#f4ecda","#eeeeda","#ecefd9","#eef0f2","#f8f2d9"];
 
 const PAGES={ // landscape, inches
   letter:{w:11,h:8.5}, tabloid:{w:17,h:11}, "24x36":{w:36,h:24}, "36x48":{w:48,h:36}
@@ -193,8 +225,10 @@ let selectedIso=null;
 
 /* ---------- persistence ---------- */
 function loadSettings(){
-  try{const s=JSON.parse(localStorage.getItem("cal_settings"));if(s)return s;}catch(e){}
-  return {schoolName:"Vista Real",startYear:2025,numLP:13,sem2Start:8,pageSize:"24x36",tints:true,weeks:DEFAULT_WEEKS.slice()};
+  const def={schoolName:"Vista Real",startYear:2025,numLP:13,sem2Start:8,pageSize:"24x36",tints:true,weeks:DEFAULT_WEEKS.slice(),
+    titleAlign:"right",titleScale:100,lpScale:100,dateScale:100,datePos:"bottom"};
+  try{const s=JSON.parse(localStorage.getItem("cal_settings"));if(s)return Object.assign(def,s);}catch(e){}
+  return def;
 }
 function saveSettings(){localStorage.setItem("cal_settings",JSON.stringify(state));}
 function loadEdits(){try{return JSON.parse(localStorage.getItem("cal_edits"))||{};}catch(e){return {};}}
@@ -206,8 +240,12 @@ function isoOf(d){return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"
 function generate(){
   const y=state.startYear, numLP=Math.max(1,state.numLP|0);
   const start=new Date(y,6,1), end=new Date(y+1,5,30);
-  const dow=(start.getDay()+6)%7;              // 0=Mon
-  const weekStart=new Date(start); weekStart.setDate(start.getDate()-dow);
+  // anchor weeks to the FIRST SCHOOL DAY (if Jul 1 is a weekend, school starts the next Monday,
+  // so the first week is a full 5-day week and LP1 stays a proper 4 weeks)
+  const fs=new Date(start);
+  while(fs.getDay()===0||fs.getDay()===6) fs.setDate(fs.getDate()+1);
+  const dow=(fs.getDay()+6)%7;                 // 0=Mon
+  const weekStart=new Date(fs); weekStart.setDate(fs.getDate()-dow);
   const MS=86400000;
   const days=[];
   for(let d=new Date(start); d<=end; d.setDate(d.getDate()+1)){
@@ -233,9 +271,8 @@ function computeLayout(rows){
   const contentW=p.w-2*pad, contentH=p.h-2*pad;
   const maxCells=Math.max(1,...rows.map(r=>r.length));
   const strip=Math.min(0.14, p.w*0.006);
-  // gutter (LP number) ~ one cell wide
-  const cw=(contentW-strip)/(maxCells+1);       // +1 for LP number column
-  const titleFs=Math.min(cw*0.9, p.h*0.05);
+  const cw=(contentW-strip)/maxCells;           // LP number now lives inside the first cell
+  const titleFs=Math.min(cw*0.9, p.h*0.05)*(state.titleScale/100);
   const titleBlock=titleFs*1.5+pad;
   const rh=(contentH-titleBlock)/rows.length;
   return {p,pad,cw,rh,strip,titleFs,maxCells};
@@ -252,10 +289,11 @@ function render(){
   s.setProperty("--rh",L.rh+"in");
   s.setProperty("--strip",L.strip+"in");
   s.setProperty("--titleFs",L.titleFs+"in");
-  s.setProperty("--lpFs",(L.rh*0.62)+"in");
-  s.setProperty("--dateFs",(L.cw*0.15)+"in");
+  s.setProperty("--titleAlign",state.titleAlign);
+  s.setProperty("--lpFs",(L.rh*0.62*(state.lpScale/100))+"in");
+  s.setProperty("--dateFs",(L.cw*0.15*(state.dateScale/100))+"in");
   s.setProperty("--noteFs",(L.cw*0.17)+"in");
-  s.setProperty("--noteBottom",(L.cw*0.20)+"in");
+  s.setProperty("--noteBottom",(L.cw*0.24)+"in");
   s.setProperty("--hair","0.6pt");
   s.setProperty("--wkline","1.6pt");
 
@@ -270,9 +308,9 @@ function render(){
     const strip=document.createElement("div");
     strip.className="sem-strip "+(lp<state.sem2Start?"s1":"s2");
     row.appendChild(strip);
-    const num=document.createElement("div"); num.className="lp-num"; num.textContent=lp; row.appendChild(num);
-    const cc=document.createElement("div"); cc.className="cells";
-    cells.forEach(c=>{
+    const cc=document.createElement("div"); cc.className="cells dpos-"+state.datePos;
+    const tint=state.tints ? (ROW_TINTS[i%ROW_TINTS.length]) : "";
+    cells.forEach((c,j)=>{
       const iso=isoOf(c.date);
       const e=ed[iso]||{};
       const cell=document.createElement("div");
@@ -280,9 +318,11 @@ function render(){
       if(state.tints && (c.wIdx%2===1)) cell.classList.add("shade");
       // week start marker: first weekday of a Mon-based week
       if(((c.date.getDay()+6)%7)===0) cell.classList.add("wk-start");
-      if(e.noSchool) cell.classList.add("no-school");
-      if(e.color) cell.style.background=e.color;
+      if(e.noSchool){ cell.classList.add("no-school"); }
+      else if(e.color){ cell.style.background=e.color; }
+      else if(tint){ cell.style.backgroundColor=tint; }
       cell.dataset.iso=iso;
+      if(j===0){ const badge=document.createElement("div"); badge.className="lp-badge"; badge.textContent=lp; cell.appendChild(badge); }
       const dl=document.createElement("div"); dl.className="date";
       dl.textContent=e.label||(MONTHS[c.date.getMonth()]+" "+String(c.date.getDate()).padStart(2,"0"));
       cell.appendChild(dl);
@@ -382,6 +422,15 @@ document.getElementById("numLP").onchange=e=>{state.numLP=Math.max(1,parseInt(e.
 document.getElementById("sem2Start").onchange=e=>{state.sem2Start=Math.max(1,parseInt(e.target.value)||8);saveSettings();render();};
 document.getElementById("pageSize").onchange=e=>{state.pageSize=e.target.value;saveSettings();render();};
 document.getElementById("tintBtn").onclick=e=>{state.tints=!state.tints;e.target.textContent="Tints: "+(state.tints?"On":"Off");saveSettings();render();};
+document.getElementById("titleAlign").onchange=e=>{state.titleAlign=e.target.value;saveSettings();render();};
+document.getElementById("datePos").onchange=e=>{state.datePos=e.target.value;saveSettings();render();};
+function bindScale(id,key,vid){
+  const el=document.getElementById(id);
+  el.oninput=e=>{state[key]=parseInt(e.target.value)||100;document.getElementById(vid).textContent=state[key]+"%";saveSettings();render();};
+}
+bindScale("titleScale","titleScale","titleSizeV");
+bindScale("lpScale","lpScale","lpSizeV");
+bindScale("dateScale","dateScale","dateSizeV");
 document.getElementById("printBtn").onclick=()=>{closeEditor();setTimeout(()=>window.print(),60);};
 document.getElementById("resetBtn").onclick=()=>{
   if(confirm("Clear all cell edits for "+state.startYear+"–"+(state.startYear+1)+"?")){delete editsByYear[state.startYear];saveEdits();render();}
@@ -412,6 +461,11 @@ function initControls(){
   document.getElementById("sem2Start").value=state.sem2Start;
   document.getElementById("pageSize").value=state.pageSize;
   document.getElementById("tintBtn").textContent="Tints: "+(state.tints?"On":"Off");
+  document.getElementById("titleAlign").value=state.titleAlign;
+  document.getElementById("datePos").value=state.datePos;
+  document.getElementById("titleScale").value=state.titleScale; document.getElementById("titleSizeV").textContent=state.titleScale+"%";
+  document.getElementById("lpScale").value=state.lpScale; document.getElementById("lpSizeV").textContent=state.lpScale+"%";
+  document.getElementById("dateScale").value=state.dateScale; document.getElementById("dateSizeV").textContent=state.dateScale+"%";
   buildYearOptions();
   syncWeeksLength();
   buildWeeksEditor();
