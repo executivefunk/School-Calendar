@@ -1,0 +1,431 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Academic Calendar Builder</title>
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#2c6fbb">
+<link rel="apple-touch-icon" href="icon-192.png">
+<style>
+  :root{
+    --ink:#1a1a1a; --muted:#8a8a8a; --line:#111;
+    --sem1:#e8952e; --sem2:#2c6fbb;
+    --ctrlbg:#f4f6f8;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;color:var(--ink);background:#e9edf1}
+
+  /* ---------- Controls ---------- */
+  #controls{position:sticky;top:0;z-index:50;background:var(--ctrlbg);border-bottom:1px solid #d4dae0;padding:10px 14px;box-shadow:0 1px 4px rgba(0,0,0,.06)}
+  #controls .row{display:flex;flex-wrap:wrap;gap:12px 18px;align-items:flex-end}
+  .field{display:flex;flex-direction:column;gap:3px}
+  .field label{font-size:11px;font-weight:600;color:#556;text-transform:uppercase;letter-spacing:.03em}
+  .field input,.field select{padding:6px 8px;border:1px solid #c3ccd4;border-radius:6px;font-size:13px;background:#fff}
+  .field input[type=text]{min-width:170px}
+  button{cursor:pointer;border:none;border-radius:6px;padding:8px 14px;font-size:13px;font-weight:600}
+  .btn-primary{background:var(--sem2);color:#fff}
+  .btn-ghost{background:#fff;border:1px solid #c3ccd4;color:#334}
+  .btn-primary:hover{filter:brightness(1.05)}
+  .btn-ghost:hover{background:#eef2f6}
+  details.adv{margin-top:8px}
+  details.adv summary{cursor:pointer;font-size:12px;font-weight:600;color:#556;user-select:none}
+  .adv-body{display:flex;flex-wrap:wrap;gap:8px;margin-top:8px;align-items:flex-end}
+  .wk{display:flex;flex-direction:column;align-items:center;gap:2px}
+  .wk label{font-size:10px;color:#889}
+  .wk input{width:46px;padding:4px;text-align:center;border:1px solid #c3ccd4;border-radius:5px;font-size:12px}
+  .hint{font-size:11px;color:#889;margin-top:6px;max-width:900px;line-height:1.4}
+
+  /* ---------- Preview stage ---------- */
+  #stage{padding:22px;display:flex;justify-content:center;overflow:auto}
+  #scaler{transform-origin:top center}
+
+  /* ---------- The printable sheet ---------- */
+  #sheet{
+    background:#fbfdfb;width:var(--sheetW);height:var(--sheetH);
+    padding:var(--pad);box-shadow:0 2px 14px rgba(0,0,0,.18);
+    display:flex;flex-direction:column;position:relative;overflow:hidden;
+  }
+  #title{font-weight:800;text-align:right;margin:0 0 var(--pad) 0;
+    font-size:var(--titleFs);line-height:1;letter-spacing:-.01em}
+  #grid{flex:1;display:flex;flex-direction:column}
+  .lp-row{display:flex;height:var(--rh);position:relative}
+  .sem-strip{width:var(--strip);flex:none}
+  .sem-strip.s1{background:var(--sem1)}
+  .sem-strip.s2{background:var(--sem2)}
+  .lp-num{width:var(--cw);flex:none;display:flex;align-items:center;justify-content:center;
+    font-weight:800;color:#c9cfd4;font-size:var(--lpFs);line-height:1;user-select:none}
+  .cells{display:flex;flex:1;min-width:0}
+  .cell{width:var(--cw);flex:none;position:relative;border-right:var(--hair) solid var(--line);
+    border-bottom:var(--hair) solid var(--line);background:#fbfdfb;overflow:hidden;cursor:pointer}
+  .lp-row .cell:first-child{border-left:var(--hair) solid var(--line)}
+  .lp-row:first-child .cell{border-top:var(--hair) solid var(--line)}
+  .cell.wk-start{border-left:var(--wkline) solid var(--line)}
+  /* alternating-week subtle gradient + diagonal hatch */
+  .cell.shade{
+    background-image:
+      repeating-linear-gradient(45deg, rgba(120,130,140,.05) 0 2px, transparent 2px 9px),
+      linear-gradient(180deg, rgba(120,130,140,.09), rgba(120,130,140,.03));
+  }
+  .cell .date{position:absolute;left:.03in;bottom:.02in;font-size:var(--dateFs);color:#333;line-height:1;white-space:nowrap}
+  .cell .note{position:absolute;inset:0 .04in var(--noteBottom) .04in;display:flex;align-items:center;justify-content:center;
+    text-align:center;font-size:var(--noteFs);font-weight:600;color:#243;line-height:1.05;overflow:hidden}
+  .cell.no-school{
+    background-image:repeating-linear-gradient(45deg,rgba(150,150,150,.28) 0 3px,transparent 3px 8px);
+    background-color:#eceff1;color:#9aa;
+  }
+  .cell.no-school .date{color:#99a}
+  .cell.selected{outline:calc(var(--wkline)*1.4) solid #d33;outline-offset:calc(var(--wkline)*-1.4);z-index:5}
+
+  /* ---------- Cell editor modal ---------- */
+  #ovl{position:fixed;inset:0;background:rgba(0,0,0,.35);display:none;align-items:center;justify-content:center;z-index:100}
+  #ovl.open{display:flex}
+  #editor{background:#fff;border-radius:12px;padding:18px 20px;width:320px;box-shadow:0 10px 40px rgba(0,0,0,.3)}
+  #editor h3{margin:0 0 2px;font-size:15px}
+  #editor .sub{font-size:12px;color:#889;margin-bottom:14px}
+  #editor .fld{margin-bottom:12px}
+  #editor .fld label{display:block;font-size:11px;font-weight:600;color:#556;text-transform:uppercase;letter-spacing:.03em;margin-bottom:4px}
+  #editor input[type=text]{width:100%;padding:7px 9px;border:1px solid #c3ccd4;border-radius:6px;font-size:13px}
+  .swatches{display:flex;gap:6px;flex-wrap:wrap}
+  .sw{width:26px;height:26px;border-radius:6px;border:2px solid #fff;box-shadow:0 0 0 1px #ccd;cursor:pointer}
+  .sw.active{box-shadow:0 0 0 2px #333}
+  .toggle{display:flex;align-items:center;gap:8px;font-size:13px}
+  #editor .actions{display:flex;justify-content:space-between;gap:8px;margin-top:16px}
+  .link-btn{background:none;border:none;color:#c33;font-weight:600;padding:6px}
+
+  @media print{
+    #controls,#stage-note{display:none!important}
+    html,body{background:#fff}
+    #stage{padding:0;display:block;overflow:visible}
+    #scaler{transform:none!important}
+    #sheet{box-shadow:none;margin:0}
+  }
+</style>
+</head>
+<body>
+
+<div id="controls">
+  <div class="row">
+    <div class="field"><label>School / Title</label><input type="text" id="schoolName" value="Vista Real"></div>
+    <div class="field"><label>School Year</label>
+      <select id="startYear"></select>
+    </div>
+    <div class="field"><label>Learning Periods</label><input type="number" id="numLP" value="13" min="1" max="20" style="width:70px"></div>
+    <div class="field"><label>Semester 2 starts at LP</label><input type="number" id="sem2Start" value="8" min="1" max="20" style="width:80px"></div>
+    <div class="field"><label>Print Size</label>
+      <select id="pageSize">
+        <option value="letter">Letter 11×8.5 (landscape)</option>
+        <option value="tabloid">Tabloid 17×11</option>
+        <option value="24x36" selected>24×36 blueprint</option>
+        <option value="36x48">36×48 blueprint</option>
+      </select>
+    </div>
+    <div class="field"><label>&nbsp;</label><button class="btn-ghost" id="tintBtn">Tints: On</button></div>
+    <div class="field"><label>&nbsp;</label><button class="btn-primary" id="printBtn">⭳ Save / Print PDF</button></div>
+    <div class="field"><label>&nbsp;</label><button class="btn-ghost" id="exportBtn">Export data</button></div>
+    <div class="field"><label>&nbsp;</label><button class="btn-ghost" id="importBtn">Import data</button></div>
+    <div class="field"><label>&nbsp;</label><button class="btn-ghost" id="resetBtn">Reset year</button></div>
+    <input type="file" id="importFile" accept="application/json" style="display:none">
+  </div>
+
+  <details class="adv">
+    <summary>Advanced · weeks per learning period</summary>
+    <div class="adv-body" id="weeksEditor"></div>
+    <div class="hint">Defaults: every period is 4 weeks, LP&nbsp;7 is 6 weeks (winter break sits inside it), and the last period is whatever weekdays remain until June&nbsp;30. LP&nbsp;1 may be short when July&nbsp;1 is mid-week. Edit any value and the dates re-flow automatically. Mark break days as “No School” by clicking a cell.</div>
+  </details>
+</div>
+
+<div id="stage-note" style="text-align:center;font-size:12px;color:#889;padding:8px">
+  Click any cell to add a label, mark No&nbsp;School, recolor, or fix its date. Everything auto-saves in this browser.
+</div>
+<div id="stage">
+  <div id="scaler">
+    <div id="sheet">
+      <h1 id="title"></h1>
+      <div id="grid"></div>
+    </div>
+  </div>
+</div>
+
+<!-- editor modal -->
+<div id="ovl">
+  <div id="editor">
+    <h3 id="ed-date">—</h3>
+    <div class="sub" id="ed-sub"></div>
+    <div class="fld">
+      <label>Label / note (shown in cell)</label>
+      <input type="text" id="ed-note" placeholder="e.g. Finals, PD Day, Break">
+    </div>
+    <div class="fld">
+      <label>Override date text</label>
+      <input type="text" id="ed-label" placeholder="leave blank to keep computed date">
+    </div>
+    <div class="fld">
+      <label class="toggle"><input type="checkbox" id="ed-noschool"> Mark as No&nbsp;School</label>
+    </div>
+    <div class="fld">
+      <label>Highlight color</label>
+      <div class="swatches" id="ed-swatches"></div>
+    </div>
+    <div class="actions">
+      <button class="link-btn" id="ed-clear">Clear cell</button>
+      <div>
+        <button class="btn-ghost" id="ed-cancel">Cancel</button>
+        <button class="btn-primary" id="ed-save">Save</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+"use strict";
+const MONTHS=["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+const DEFAULT_WEEKS=[4,4,4,4,4,4,6,4,4,4,4,4]; // LP1..LP12 ; last LP = remainder
+const SWATCHES=["","#ffd9d9","#ffe9c7","#fff5c2","#d9f0d3","#cfe8f5","#dcd6f2","#f3d1e8","#d9dde1"];
+
+const PAGES={ // landscape, inches
+  letter:{w:11,h:8.5}, tabloid:{w:17,h:11}, "24x36":{w:36,h:24}, "36x48":{w:48,h:36}
+};
+
+let state=loadSettings();
+let editsByYear=loadEdits();          // { year: { iso:{note,label,noSchool,color} } }
+let selectedIso=null;
+
+/* ---------- persistence ---------- */
+function loadSettings(){
+  try{const s=JSON.parse(localStorage.getItem("cal_settings"));if(s)return s;}catch(e){}
+  return {schoolName:"Vista Real",startYear:2025,numLP:13,sem2Start:8,pageSize:"24x36",tints:true,weeks:DEFAULT_WEEKS.slice()};
+}
+function saveSettings(){localStorage.setItem("cal_settings",JSON.stringify(state));}
+function loadEdits(){try{return JSON.parse(localStorage.getItem("cal_edits"))||{};}catch(e){return {};}}
+function saveEdits(){localStorage.setItem("cal_edits",JSON.stringify(editsByYear));}
+function edits(){const y=state.startYear;editsByYear[y]=editsByYear[y]||{};return editsByYear[y];}
+
+/* ---------- calendar generation ---------- */
+function isoOf(d){return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");}
+function generate(){
+  const y=state.startYear, numLP=Math.max(1,state.numLP|0);
+  const start=new Date(y,6,1), end=new Date(y+1,5,30);
+  const dow=(start.getDay()+6)%7;              // 0=Mon
+  const weekStart=new Date(start); weekStart.setDate(start.getDate()-dow);
+  const MS=86400000;
+  const days=[];
+  for(let d=new Date(start); d<=end; d.setDate(d.getDate()+1)){
+    const wd=d.getDay(); if(wd===0||wd===6) continue;
+    const wIdx=Math.floor((d-weekStart)/(7*MS));
+    days.push({date:new Date(d),wIdx});
+  }
+  // LP week ranges
+  const weeks=state.weeks; const ranges=[]; let cum=0;
+  for(let i=0;i<numLP-1;i++){const w=(weeks[i]|0)||4; ranges.push([cum,cum+w]); cum+=w;}
+  ranges.push([cum,1e9]);
+  const rows=Array.from({length:numLP},()=>[]);
+  for(const c of days){
+    for(let i=0;i<ranges.length;i++){ if(c.wIdx>=ranges[i][0]&&c.wIdx<ranges[i][1]){ rows[i].push(c); break; } }
+  }
+  return rows;
+}
+
+/* ---------- rendering ---------- */
+function computeLayout(rows){
+  const p=PAGES[state.pageSize]||PAGES["24x36"];
+  const pad=Math.max(0.18, p.w*0.012);
+  const contentW=p.w-2*pad, contentH=p.h-2*pad;
+  const maxCells=Math.max(1,...rows.map(r=>r.length));
+  const strip=Math.min(0.14, p.w*0.006);
+  // gutter (LP number) ~ one cell wide
+  const cw=(contentW-strip)/(maxCells+1);       // +1 for LP number column
+  const titleFs=Math.min(cw*0.9, p.h*0.05);
+  const titleBlock=titleFs*1.5+pad;
+  const rh=(contentH-titleBlock)/rows.length;
+  return {p,pad,cw,rh,strip,titleFs,maxCells};
+}
+
+function render(){
+  const rows=generate();
+  const L=computeLayout(rows);
+  const s=document.documentElement.style;
+  s.setProperty("--sheetW",L.p.w+"in");
+  s.setProperty("--sheetH",L.p.h+"in");
+  s.setProperty("--pad",L.pad+"in");
+  s.setProperty("--cw",L.cw+"in");
+  s.setProperty("--rh",L.rh+"in");
+  s.setProperty("--strip",L.strip+"in");
+  s.setProperty("--titleFs",L.titleFs+"in");
+  s.setProperty("--lpFs",(L.rh*0.62)+"in");
+  s.setProperty("--dateFs",(L.cw*0.15)+"in");
+  s.setProperty("--noteFs",(L.cw*0.17)+"in");
+  s.setProperty("--noteBottom",(L.cw*0.20)+"in");
+  s.setProperty("--hair","0.6pt");
+  s.setProperty("--wkline","1.6pt");
+
+  document.getElementById("pageStyle").textContent=`@page{size:${L.p.w}in ${L.p.h}in;margin:0}`;
+  document.getElementById("title").textContent=`${state.schoolName} Academic Calendar ${state.startYear}–${state.startYear+1}`;
+
+  const grid=document.getElementById("grid"); grid.innerHTML="";
+  const ed=edits();
+  rows.forEach((cells,i)=>{
+    const lp=i+1;
+    const row=document.createElement("div"); row.className="lp-row";
+    const strip=document.createElement("div");
+    strip.className="sem-strip "+(lp<state.sem2Start?"s1":"s2");
+    row.appendChild(strip);
+    const num=document.createElement("div"); num.className="lp-num"; num.textContent=lp; row.appendChild(num);
+    const cc=document.createElement("div"); cc.className="cells";
+    cells.forEach(c=>{
+      const iso=isoOf(c.date);
+      const e=ed[iso]||{};
+      const cell=document.createElement("div");
+      cell.className="cell";
+      if(state.tints && (c.wIdx%2===1)) cell.classList.add("shade");
+      // week start marker: first weekday of a Mon-based week
+      if(((c.date.getDay()+6)%7)===0) cell.classList.add("wk-start");
+      if(e.noSchool) cell.classList.add("no-school");
+      if(e.color) cell.style.background=e.color;
+      cell.dataset.iso=iso;
+      const dl=document.createElement("div"); dl.className="date";
+      dl.textContent=e.label||(MONTHS[c.date.getMonth()]+" "+String(c.date.getDate()).padStart(2,"0"));
+      cell.appendChild(dl);
+      if(e.note){const n=document.createElement("div");n.className="note";n.textContent=e.note;cell.appendChild(n);}
+      cell.addEventListener("click",()=>openEditor(iso,c.date));
+      cc.appendChild(cell);
+    });
+    row.appendChild(cc);
+    grid.appendChild(row);
+  });
+  fitScale();
+}
+
+function fitScale(){
+  const p=PAGES[state.pageSize]||PAGES["24x36"];
+  const stage=document.getElementById("stage");
+  const avail=stage.clientWidth-44;
+  const pxWide=p.w*96;
+  const scale=Math.min(1, avail/pxWide);
+  document.getElementById("scaler").style.transform="scale("+scale+")";
+  // collapse leftover space from scaling
+  document.getElementById("scaler").style.height=(p.h*96*scale)+"px";
+}
+
+/* ---------- editor ---------- */
+function openEditor(iso,date){
+  selectedIso=iso;
+  document.querySelectorAll(".cell.selected").forEach(c=>c.classList.remove("selected"));
+  const cell=document.querySelector('.cell[data-iso="'+iso+'"]'); if(cell)cell.classList.add("selected");
+  const e=edits()[iso]||{};
+  const d=new Date(iso+"T00:00:00");
+  const wd=["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"][d.getDay()];
+  document.getElementById("ed-date").textContent=MONTHS[d.getMonth()]+" "+d.getDate()+", "+d.getFullYear();
+  document.getElementById("ed-sub").textContent=wd;
+  document.getElementById("ed-note").value=e.note||"";
+  document.getElementById("ed-label").value=e.label||"";
+  document.getElementById("ed-noschool").checked=!!e.noSchool;
+  buildSwatches(e.color||"");
+  document.getElementById("ovl").classList.add("open");
+}
+function buildSwatches(active){
+  const box=document.getElementById("ed-swatches"); box.innerHTML="";
+  SWATCHES.forEach(col=>{
+    const b=document.createElement("div"); b.className="sw"+(col===active?" active":"");
+    b.style.background=col||"#fff";
+    if(!col){b.textContent="∅";b.style.display="flex";b.style.alignItems="center";b.style.justifyContent="center";b.style.color="#aab";b.style.fontSize="13px";}
+    b.dataset.col=col;
+    b.addEventListener("click",()=>{box.querySelectorAll(".sw").forEach(x=>x.classList.remove("active"));b.classList.add("active");});
+    box.appendChild(b);
+  });
+}
+function closeEditor(){document.getElementById("ovl").classList.remove("open");
+  document.querySelectorAll(".cell.selected").forEach(c=>c.classList.remove("selected"));selectedIso=null;}
+document.getElementById("ed-save").onclick=()=>{
+  const e=edits();
+  const note=document.getElementById("ed-note").value.trim();
+  const label=document.getElementById("ed-label").value.trim();
+  const noSchool=document.getElementById("ed-noschool").checked;
+  const col=document.querySelector("#ed-swatches .sw.active")?.dataset.col||"";
+  const obj={}; if(note)obj.note=note; if(label)obj.label=label; if(noSchool)obj.noSchool=true; if(col)obj.color=col;
+  if(Object.keys(obj).length)e[selectedIso]=obj; else delete e[selectedIso];
+  saveEdits(); closeEditor(); render();
+};
+document.getElementById("ed-clear").onclick=()=>{delete edits()[selectedIso];saveEdits();closeEditor();render();};
+document.getElementById("ed-cancel").onclick=closeEditor;
+document.getElementById("ovl").addEventListener("click",e=>{if(e.target.id==="ovl")closeEditor();});
+
+/* ---------- controls wiring ---------- */
+function buildYearOptions(){
+  const sel=document.getElementById("startYear"); sel.innerHTML="";
+  for(let y=2024;y<=2035;y++){const o=document.createElement("option");o.value=y;o.textContent=y+"–"+(y+1);sel.appendChild(o);}
+  sel.value=state.startYear;
+}
+function buildWeeksEditor(){
+  const box=document.getElementById("weeksEditor"); box.innerHTML="";
+  const n=state.numLP;
+  for(let i=0;i<n;i++){
+    const wrap=document.createElement("div"); wrap.className="wk";
+    const lab=document.createElement("label"); lab.textContent=(i===n-1?"LP"+(i+1)+" (rem.)":"LP"+(i+1));
+    const inp=document.createElement("input"); inp.type="number"; inp.min="1"; inp.max="12";
+    if(i===n-1){inp.disabled=true;inp.value="auto";inp.style.color="#aab";}
+    else{inp.value=state.weeks[i]|| (i===6?6:4);}
+    inp.addEventListener("change",()=>{state.weeks[i]=parseInt(inp.value)||4;saveSettings();render();});
+    wrap.appendChild(lab);wrap.appendChild(inp);box.appendChild(wrap);
+  }
+}
+function syncWeeksLength(){
+  const n=state.numLP;
+  const w=state.weeks.slice(0,n-1);
+  while(w.length<n-1){const idx=w.length;w.push(idx===6?6:4);}
+  state.weeks=w;
+}
+
+document.getElementById("schoolName").oninput=e=>{state.schoolName=e.target.value;saveSettings();render();};
+document.getElementById("startYear").onchange=e=>{state.startYear=parseInt(e.target.value);saveSettings();render();};
+document.getElementById("numLP").onchange=e=>{state.numLP=Math.max(1,parseInt(e.target.value)||13);syncWeeksLength();saveSettings();buildWeeksEditor();render();};
+document.getElementById("sem2Start").onchange=e=>{state.sem2Start=Math.max(1,parseInt(e.target.value)||8);saveSettings();render();};
+document.getElementById("pageSize").onchange=e=>{state.pageSize=e.target.value;saveSettings();render();};
+document.getElementById("tintBtn").onclick=e=>{state.tints=!state.tints;e.target.textContent="Tints: "+(state.tints?"On":"Off");saveSettings();render();};
+document.getElementById("printBtn").onclick=()=>{closeEditor();setTimeout(()=>window.print(),60);};
+document.getElementById("resetBtn").onclick=()=>{
+  if(confirm("Clear all cell edits for "+state.startYear+"–"+(state.startYear+1)+"?")){delete editsByYear[state.startYear];saveEdits();render();}
+};
+document.getElementById("exportBtn").onclick=()=>{
+  const data={settings:state,edits:editsByYear};
+  const blob=new Blob([JSON.stringify(data,null,2)],{type:"application/json"});
+  const a=document.createElement("a");a.href=URL.createObjectURL(blob);
+  a.download="academic-calendar-"+state.startYear+".json";a.click();
+};
+document.getElementById("importBtn").onclick=()=>document.getElementById("importFile").click();
+document.getElementById("importFile").onchange=e=>{
+  const f=e.target.files[0]; if(!f)return;
+  const r=new FileReader();
+  r.onload=()=>{try{const d=JSON.parse(r.result);
+    if(d.settings)state=Object.assign(state,d.settings);
+    if(d.edits)editsByYear=d.edits;
+    saveSettings();saveEdits();initControls();render();
+  }catch(err){alert("Could not read that file.");}};
+  r.readAsText(f);
+};
+window.addEventListener("resize",fitScale);
+
+/* ---------- boot ---------- */
+function initControls(){
+  document.getElementById("schoolName").value=state.schoolName;
+  document.getElementById("numLP").value=state.numLP;
+  document.getElementById("sem2Start").value=state.sem2Start;
+  document.getElementById("pageSize").value=state.pageSize;
+  document.getElementById("tintBtn").textContent="Tints: "+(state.tints?"On":"Off");
+  buildYearOptions();
+  syncWeeksLength();
+  buildWeeksEditor();
+}
+// dynamic @page style tag
+const ps=document.createElement("style");ps.id="pageStyle";document.head.appendChild(ps);
+
+initControls();
+render();
+
+/* ---------- service worker ---------- */
+if("serviceWorker" in navigator){
+  window.addEventListener("load",()=>navigator.serviceWorker.register("service-worker.js").catch(()=>{}));
+}
+</script>
+</body>
+</html>

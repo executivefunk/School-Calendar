@@ -1,0 +1,15 @@
+{
+  "name": "Academic Calendar Builder",
+  "short_name": "Calendar",
+  "description": "Generate a school-year learning-period calendar and export it as a print-ready PDF.",
+  "start_url": "index.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "landscape",
+  "background_color": "#e9edf1",
+  "theme_color": "#2c6fbb",
+  "icons": [
+    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
+  ]
+}
